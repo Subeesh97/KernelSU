@@ -1,6 +1,7 @@
 import com.android.build.api.dsl.ApplicationDefaultConfig
 import com.android.build.api.dsl.CommonExtension
 import com.android.build.gradle.api.AndroidBasePlugin
+import java.io.ByteArrayOutputStream
 
 plugins {
     alias(libs.plugins.agp.app) apply false
@@ -14,35 +15,50 @@ cmaker {
     default {
         arguments.addAll(
             arrayOf(
-                "-DANDROID_STL=none",
+                "-DANDROID_STL=c++_static",
             )
         )
-        abiFilters("arm64-v8a", "x86_64", "riscv64")
+        val flags = arrayOf(
+            "-Wno-gnu-string-literal-operator-template",
+            "-Wno-c++2b-extensions",
+        )
+        cFlags.addAll(flags)
+        cppFlags.addAll(flags)
+        abiFilters("arm64-v8a", "x86_64")
     }
     buildTypes {
         if (it.name == "release") {
-            arguments += "-DDEBUG_SYMBOLS_PATH=${layout.buildDirectory.asFile.get().absolutePath}/symbols"
+            arguments += "-DDEBUG_SYMBOLS_PATH=${buildDir.absolutePath}/symbols"
         }
     }
 }
 
 val androidMinSdkVersion = 26
-val androidTargetSdkVersion = 36
-val androidCompileSdkVersion = 36
-val androidCompileNdkVersion = "28.0.13004108"
+val androidTargetSdkVersion = 34
+val androidCompileSdkVersion = 34
+val androidBuildToolsVersion = "34.0.0"
+val androidCompileNdkVersion = "26.3.11579264"
 val androidSourceCompatibility = JavaVersion.VERSION_21
 val androidTargetCompatibility = JavaVersion.VERSION_21
 val managerVersionCode by extra(getVersionCode())
 val managerVersionName by extra(getVersionName())
 
 fun getGitCommitCount(): Int {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "rev-list", "--count", "HEAD"))
-    return process.inputStream.bufferedReader().use { it.readText().trim().toInt() }
+    val out = ByteArrayOutputStream()
+    exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        standardOutput = out
+    }
+    return out.toString().trim().toInt()
 }
 
 fun getGitDescribe(): String {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "describe", "--tags", "--always"))
-    return process.inputStream.bufferedReader().use { it.readText().trim() }
+    val out = ByteArrayOutputStream()
+    exec {
+        commandLine("git", "describe", "--tags", "--always")
+        standardOutput = out
+    }
+    return out.toString().trim()
 }
 
 fun getVersionCode(): Int {
@@ -60,6 +76,7 @@ subprojects {
         extensions.configure(CommonExtension::class.java) {
             compileSdk = androidCompileSdkVersion
             ndkVersion = androidCompileNdkVersion
+            buildToolsVersion = androidBuildToolsVersion
 
             defaultConfig {
                 minSdk = androidMinSdkVersion
@@ -67,9 +84,6 @@ subprojects {
                     targetSdk = androidTargetSdkVersion
                     versionCode = managerVersionCode
                     versionName = managerVersionName
-                }
-                ndk {
-                    abiFilters += listOf("arm64-v8a", "x86_64", "riscv64")
                 }
             }
 

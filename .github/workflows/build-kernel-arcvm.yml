@@ -32,7 +32,7 @@ jobs:
             defconfig: arm64_arcvm_defconfig
 
     name: Build ChromeOS ARCVM kernel
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     env:
       LTO: thin
       ROOT_DIR: /
@@ -50,7 +50,7 @@ jobs:
 
           sudo ln -s --force python3 /usr/bin/python
 
-          export LLVM_VERSION=14
+          export LLVM_VERSION=12
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh $LLVM_VERSION
@@ -82,7 +82,7 @@ jobs:
           SUBLEVEL=$(grep -E '^SUBLEVEL = ' Makefile | awk '{print $3}')
           echo "ChromeOS ARCVM Linux kernel version: $VERSION.$PATCHLEVEL.$SUBLEVEL"
           echo "version=$VERSION.$PATCHLEVEL.$SUBLEVEL" >> $GITHUB_ENV
-
+          
       - name: Setup KernelSU
         working-directory: kernel
         run: |
@@ -94,9 +94,7 @@ jobs:
 
           echo "[+] Add KernelSU driver to Makefile"
           DRIVER_MAKEFILE=$KERNEL_ROOT/drivers/Makefile
-          DRIVER_KCONFIG=$KERNEL_ROOT/drivers/Kconfig
-          grep -q "kernelsu" "$DRIVER_MAKEFILE" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_MAKEFILE"
-          grep -q "kernelsu" "$DRIVER_KCONFIG" || sed -i "/endmenu/i\\source \"drivers/kernelsu/Kconfig\"" "$DRIVER_KCONFIG"
+          grep -q "kernelsu" $DRIVER_MAKEFILE || echo "obj-y += kernelsu/" >> $DRIVER_MAKEFILE
 
           echo "[+] Apply KernelSU patches"
           cd $KERNEL_ROOT && git apply $GITHUB_WORKSPACE/KernelSU/.github/patches/5.10/*.patch || echo "[-] No patch found"

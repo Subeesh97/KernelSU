@@ -7,11 +7,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.core.content.ContextCompat
-import me.weishu.kernelsu.ksuApp
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
 
 /**
@@ -27,7 +26,8 @@ fun download(
     onDownloaded: (Uri) -> Unit = {},
     onDownloading: () -> Unit = {}
 ) {
-    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    val downloadManager =
+        context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
     val query = DownloadManager.Query()
     query.setFilterByStatus(DownloadManager.STATUS_RUNNING or DownloadManager.STATUS_PAUSED or DownloadManager.STATUS_PENDING)
@@ -67,7 +67,7 @@ fun checkNewVersion(): LatestVersionInfo {
     // default null value if failed
     val defaultValue = LatestVersionInfo()
     runCatching {
-        ksuApp.okhttpClient.newCall(okhttp3.Request.Builder().url(url).build()).execute()
+        okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url(url).build()).execute()
             .use { response ->
                 if (!response.isSuccessful) {
                     return defaultValue
@@ -130,12 +130,18 @@ fun DownloadListener(context: Context, onDownloaded: (Uri) -> Unit) {
                 }
             }
         }
-        ContextCompat.registerReceiver(
-            context,
-            receiver,
-            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-            ContextCompat.RECEIVER_EXPORTED
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(
+                receiver,
+                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+                Context.RECEIVER_EXPORTED
+            )
+        } else {
+            context.registerReceiver(
+                receiver,
+                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
+            )
+        }
         onDispose {
             context.unregisterReceiver(receiver)
         }

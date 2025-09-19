@@ -14,20 +14,35 @@ use crate::{
 #[cfg(any(target_os = "linux", target_os = "android"))]
 use rustix::{
     process::getuid,
-    thread::{Gid, Uid, set_thread_res_gid, set_thread_res_uid},
+    thread::{set_thread_res_gid, set_thread_res_uid, Gid, Uid},
 };
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn grant_root(global_mnt: bool) -> Result<()> {
-    rustix::process::ksu_grant_root()?;
+    const KERNEL_SU_OPTION: u32 = 0xDEAD_BEEF;
+    const CMD_GRANT_ROOT: u64 = 0;
 
-    let mut command = Command::new("sh");
+    let mut result: u32 = 0;
+    unsafe {
+        #[allow(clippy::cast_possible_wrap)]
+        libc::prctl(
+            KERNEL_SU_OPTION as i32, // supposed to overflow
+            CMD_GRANT_ROOT,
+            0,
+            0,
+            std::ptr::addr_of_mut!(result).cast::<libc::c_void>(),
+        );
+    }
+
+    anyhow::ensure!(result == KERNEL_SU_OPTION, "grant root failed");
+    let mut command = std::process::Command::new("sh");
     let command = unsafe {
         command.pre_exec(move || {
             if global_mnt {
                 let _ = utils::switch_mnt_ns(1);
+                let _ = utils::unshare_mnt_ns();
             }
-            Result::Ok(())
+            std::result::Result::Ok(())
         })
     };
     // add /data/adb/ksu/bin to PATH
@@ -49,7 +64,7 @@ fn print_usage(program: &str, opts: Options) {
 fn set_identity(uid: u32, gid: u32, groups: &[u32]) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
     {
-        rustix::thread::set_thread_groups(
+        rustix::process::set_groups(
             groups
                 .iter()
                 .map(|g| unsafe { Gid::from_raw(*g) })
@@ -74,7 +89,7 @@ pub fn root_shell() -> Result<()> {
     // we are root now, this was set in kernel!
 
     use anyhow::anyhow;
-    let env_args: Vec<String> = env::args().collect();
+    let env_args: Vec<String> = std::env::args().collect();
     let program = env_args[0].clone();
     let args = env_args
         .iter()
@@ -104,11 +119,10 @@ pub fn root_shell() -> Result<()> {
         "preserve-environment",
         "preserve the entire environment",
     );
-    opts.optopt(
+    opts.optflag(
         "s",
         "shell",
         "use SHELL instead of the default /system/bin/sh",
-        "SHELL",
     );
     opts.optflag("v", "version", "display version number and exit");
     opts.optflag("V", "", "display version code and exit");
@@ -140,7 +154,7 @@ pub fn root_shell() -> Result<()> {
         .collect::<Vec<String>>();
 
     let matches = match opts.parse(&args[1..]) {
-        Result::Ok(m) => m,
+        std::result::Result::Ok(m) => m,
         Err(f) => {
             println!("{f}");
             print_usage(&program, opts);
@@ -263,11 +277,12 @@ pub fn root_shell() -> Result<()> {
             #[cfg(any(target_os = "linux", target_os = "android"))]
             if mount_master {
                 let _ = utils::switch_mnt_ns(1);
+                let _ = utils::unshare_mnt_ns();
             }
 
             set_identity(uid, gid, &groups);
 
-            Result::Ok(())
+            std::result::Result::Ok(())
         })
     };
 
@@ -281,6 +296,6 @@ fn add_path_to_env(path: &str) -> Result<()> {
     let new_path = PathBuf::from(path.trim_end_matches('/'));
     paths.push(new_path);
     let new_path_env = env::join_paths(paths)?;
-    unsafe { env::set_var("PATH", new_path_env) };
+    env::set_var("PATH", new_path_env);
     Ok(())
 }
